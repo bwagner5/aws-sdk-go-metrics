@@ -10,21 +10,19 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/eks"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/bwagner5/aws-sdk-go-metrics/pkg/metricsclient"
+	"github.com/bwagner5/aws-sdk-go-metrics/pkg/awsmetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
 	registry := prometheus.NewRegistry()
-	metricsClient, err := metricsclient.New(sess.Config.HTTPClient, registry)
+	sess, err := awsmetrics.Instrument(session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	})), registry)
 	if err != nil {
-		log.Fatalf("Unable to create metrics client for the aws-sdk-go v1: %v", err)
+		log.Fatalf("Unable to create instrumented aws sdk session for the aws-sdk-go v1: %v", err)
 	}
-	sess.Config.HTTPClient = metricsClient
 
 	go func() {
 		for {
