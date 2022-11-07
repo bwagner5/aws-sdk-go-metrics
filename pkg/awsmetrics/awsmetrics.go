@@ -36,6 +36,16 @@ var (
 	}, labels)
 )
 
+// MustInstrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
+// and panics if an error occurs
+func MustInstrument(session *session.Session, registry prometheus.Registerer) (*session.Session, error) {
+	sess, err := Instrument(session, registry)
+	if err != nil {
+		panic(err)
+	}
+	return sess, nil
+}
+
 // Instrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
 func Instrument(session *session.Session, registry prometheus.Registerer) (*session.Session, error) {
 	if session.Config == nil {
@@ -49,7 +59,7 @@ func Instrument(session *session.Session, registry prometheus.Registerer) (*sess
 	return session, nil
 }
 
-// WithInstrumentedClients returns a LoadOptionsFunc for use with aws-sdk-go-v2 config
+// WithInstrumentedClient returns a LoadOptionsFunc for use with aws-sdk-go-v2 config
 func WithInstrumentedClients(registry prometheus.Registerer) config.LoadOptionsFunc {
 	client, err := InstrumentedAWSHTTPClient(awshttp.NewBuildableClient(), registry)
 	if err != nil {
