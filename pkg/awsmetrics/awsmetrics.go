@@ -8,45 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/http2"
 )
-
-// Instrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
-func Instrument(session *session.Session, registry prometheus.Registerer) (*session.Session, error) {
-	if session.Config == nil {
-		return session, fmt.Errorf("aws session must have valid config to instrument")
-	}
-	httpClient, err := InstrumentedHTTPClient(session.Config.HTTPClient, registry)
-	if err != nil {
-		return session, fmt.Errorf("unable to construct instrumented http client, %v", err)
-	}
-	session.Config.HTTPClient = httpClient
-	return session, nil
-}
-
-// InstrumentedHTTPClient turns an arbitrary http client into an aws sdk instrumented client
-func InstrumentedHTTPClient(httpClient *http.Client, registry prometheus.Registerer) (*http.Client, error) {
-	for _, c := range []prometheus.Collector{totalRequests, requestLatency} {
-		if err := registry.Register(c); err != nil {
-			return httpClient, err
-		}
-	}
-
-	var transport *http.Transport
-	if httpClient.Transport == nil {
-		transport = http.DefaultTransport.(*http.Transport)
-	} else {
-		transport = httpClient.Transport.(*http.Transport)
-	}
-	err := http2.ConfigureTransport(transport)
-	if err != nil {
-		panic(err)
-	}
-	httpClient.Transport = MetricsRoundTripper{BaseRT: transport}
-	return httpClient, nil
-}
 
 var (
 	labels        = []string{"service", "action", "status_code"}
@@ -68,8 +36,120 @@ var (
 	}, labels)
 )
 
+// Instrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
+func Instrument(session *session.Session, registry prometheus.Registerer) (*session.Session, error) {
+	if session.Config == nil {
+		return session, fmt.Errorf("aws session must have valid config to instrument")
+	}
+	httpClient, err := InstrumentedHTTPClient(session.Config.HTTPClient, registry)
+	if err != nil {
+		return session, fmt.Errorf("unable to construct instrumented http client, %v", err)
+	}
+	session.Config.HTTPClient = httpClient
+	return session, nil
+}
+
+// WithInstrumentedClients returns a LoadOptionsFunc for use with aws-sdk-go-v2 config
+func WithInstrumentedClients(registry prometheus.Registerer) config.LoadOptionsFunc {
+	client, err := InstrumentedAWSHTTPClient(awshttp.NewBuildableClient(), registry)
+	if err != nil {
+		return nil
+	}
+	return config.WithHTTPClient(client)
+}
+
+// type startTime struct{}
+
+// // TODO: This doesn't work
+// func instrumentV2MW(cfg aws.Config, registry prometheus.Registerer) (aws.Config, error) {
+// 	if err := registerMetrics(registry); err != nil {
+// 		return cfg, err
+// 	}
+// 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
+// 		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("instrument-before", func(ctx context.Context, input middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+// 			return next.HandleInitialize(middleware.WithStackValue(ctx, startTime{}, time.Now().UTC()), input)
+// 		}), middleware.Before)
+// 	}, func(stack *middleware.Stack) error {
+// 		return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("instrument-after", func(ctx context.Context, input middleware.DeserializeInput, next middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
+// 			start, ok := middleware.GetStackValue(ctx, startTime{}).(time.Time)
+// 			if !ok {
+// 				return next.HandleDeserialize(ctx, input)
+// 			}
+// 			latency := time.Since(start)
+// 			// TODO: how to get response code
+// 			statusCode := 200
+// 			requestLabels := requestLabels(mw.GetServiceID(ctx), mw.GetOperationName(ctx), statusCode)
+// 			totalRequests.With(requestLabels).Inc()
+// 			// TODO: I think this is before the response :(
+// 			requestLatency.With(requestLabels).Observe(float64(latency.Milliseconds()))
+// 			return next.HandleDeserialize(ctx, input)
+// 		}), middleware.After)
+// 	})
+// 	return cfg, nil
+// }
+
+func InstrumentedAWSHTTPClient(httpClient *awshttp.BuildableClient, registry prometheus.Registerer) (aws.HTTPClient, error) {
+	if err := registerMetrics(registry); err != nil {
+		return httpClient, err
+	}
+
+	var transport *http.Transport
+	if httpClient.GetTransport() == nil {
+		transport = http.DefaultTransport.(*http.Transport)
+	} else {
+		transport = httpClient.GetTransport()
+	}
+	err := http2.ConfigureTransport(transport)
+	if err != nil {
+		panic(err)
+	}
+	return MetricsRoundTripper{BaseRT: httpClient.GetTransport()}, nil
+}
+
+// InstrumentedHTTPClient turns an arbitrary http client into an aws sdk instrumented client
+func InstrumentedHTTPClient(httpClient *http.Client, registry prometheus.Registerer) (*http.Client, error) {
+	if err := registerMetrics(registry); err != nil {
+		return httpClient, err
+	}
+
+	var transport *http.Transport
+	if httpClient.Transport == nil {
+		transport = http.DefaultTransport.(*http.Transport)
+	} else {
+		transport = httpClient.Transport.(*http.Transport)
+	}
+	err := http2.ConfigureTransport(transport)
+	if err != nil {
+		panic(err)
+	}
+	httpClient.Transport = MetricsRoundTripper{BaseRT: transport}
+	return httpClient, nil
+}
+
+func registerMetrics(registry prometheus.Registerer) error {
+	for _, c := range []prometheus.Collector{totalRequests, requestLatency} {
+		if err := registry.Register(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requestLabels(service string, action string, statusCode int) prometheus.Labels {
+	return prometheus.Labels{
+		"service":     service,
+		"action":      action,
+		"status_code": fmt.Sprint(statusCode),
+	}
+}
+
 type MetricsRoundTripper struct {
 	BaseRT http.RoundTripper
+}
+
+// Do implements the aws.HTTPClient interface
+func (mrt MetricsRoundTripper) Do(req *http.Request) (*http.Response, error) {
+	return mrt.RoundTrip(req)
 }
 
 // RoundTrip implements an instrumented RoundTrip for AWS API calls
@@ -94,11 +174,7 @@ func (mrt MetricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	if res != nil {
 		statusCode = res.StatusCode
 	}
-	requestLabels := prometheus.Labels{
-		"service":     service,
-		"action":      action,
-		"status_code": fmt.Sprint(statusCode),
-	}
+	requestLabels := requestLabels(service, action, statusCode)
 	totalRequests.With(requestLabels).Inc()
 	// log.Printf("REQUEST: %v\n", string(dump))
 	requestLatency.With(requestLabels).Observe(float64(latency.Milliseconds()))
