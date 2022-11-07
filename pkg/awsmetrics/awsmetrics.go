@@ -166,7 +166,7 @@ func (mrt MetricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	log.Println(req.Proto)
 	dump, err := httputil.DumpRequestOut(req, true)
 	if err != nil {
-		log.Fatalf("unable to dump request: %v", err)
+		log.Printf("unable to dump request: %v", err)
 	}
 	service, err := getService(req)
 	if err != nil {
