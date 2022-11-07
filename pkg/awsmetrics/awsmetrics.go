@@ -38,12 +38,12 @@ var (
 
 // MustInstrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
 // and panics if an error occurs
-func MustInstrument(session *session.Session, registry prometheus.Registerer) (*session.Session, error) {
+func MustInstrument(session *session.Session, registry prometheus.Registerer) *session.Session {
 	sess, err := Instrument(session, registry)
 	if err != nil {
 		panic(err)
 	}
-	return sess, nil
+	return sess
 }
 
 // Instrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
