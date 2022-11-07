@@ -128,10 +128,8 @@ func InstrumentedHTTPClient(httpClient *http.Client, registry prometheus.Registe
 	} else {
 		transport = httpClient.Transport.(*http.Transport)
 	}
-	err := http2.ConfigureTransport(transport)
-	if err != nil {
-		panic(err)
-	}
+	// no need to handle error since its idempotent
+	http2.ConfigureTransport(transport)
 	httpClient.Transport = MetricsRoundTripper{BaseRT: transport}
 	return httpClient, nil
 }
