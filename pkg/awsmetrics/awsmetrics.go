@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"strings"
 	"time"
 
@@ -163,17 +164,17 @@ func (mrt MetricsRoundTripper) Do(req *http.Request) (*http.Response, error) {
 // RoundTrip implements an instrumented RoundTrip for AWS API calls
 func (mrt MetricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	log.Println(req.Proto)
-	// dump, err := httputil.DumpRequestOut(req, true)
-	// if err != nil {
-	// 	log.Fatalf("unable to dump request: %v", err)
-	// }
+	dump, err := httputil.DumpRequestOut(req, true)
+	if err != nil {
+		log.Fatalf("unable to dump request: %v", err)
+	}
 	service, err := getService(req)
 	if err != nil {
-		log.Fatalf("Unable to parse request for service: %v", err)
+		log.Printf("Unable to parse request for service: %v", err)
 	}
 	action, err := getAction(req)
 	if err != nil {
-		log.Fatalf("Unable to parse request for action: %v", err)
+		log.Printf("Unable to parse request for action: %v", err)
 	}
 	start := time.Now().UTC()
 	res, err := mrt.BaseRT.RoundTrip(req)
@@ -184,7 +185,7 @@ func (mrt MetricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	}
 	requestLabels := requestLabels(service, action, statusCode)
 	totalRequests.With(requestLabels).Inc()
-	// log.Printf("REQUEST: %v\n", string(dump))
+	log.Printf("REQUEST: %v\n", string(dump))
 	requestLatency.With(requestLabels).Observe(float64(latency.Milliseconds()))
 
 	return res, err
