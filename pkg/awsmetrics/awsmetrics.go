@@ -1,11 +1,11 @@
 package awsmetrics
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"strings"
 	"time"
 
@@ -68,36 +68,6 @@ func WithInstrumentedClients(registry prometheus.Registerer) config.LoadOptionsF
 	}
 	return config.WithHTTPClient(client)
 }
-
-// type startTime struct{}
-
-// // TODO: This doesn't work
-// func instrumentV2MW(cfg aws.Config, registry prometheus.Registerer) (aws.Config, error) {
-// 	if err := registerMetrics(registry); err != nil {
-// 		return cfg, err
-// 	}
-// 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
-// 		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("instrument-before", func(ctx context.Context, input middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
-// 			return next.HandleInitialize(middleware.WithStackValue(ctx, startTime{}, time.Now().UTC()), input)
-// 		}), middleware.Before)
-// 	}, func(stack *middleware.Stack) error {
-// 		return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("instrument-after", func(ctx context.Context, input middleware.DeserializeInput, next middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
-// 			start, ok := middleware.GetStackValue(ctx, startTime{}).(time.Time)
-// 			if !ok {
-// 				return next.HandleDeserialize(ctx, input)
-// 			}
-// 			latency := time.Since(start)
-// 			// TODO: how to get response code
-// 			statusCode := 200
-// 			requestLabels := requestLabels(mw.GetServiceID(ctx), mw.GetOperationName(ctx), statusCode)
-// 			totalRequests.With(requestLabels).Inc()
-// 			// TODO: I think this is before the response :(
-// 			requestLatency.With(requestLabels).Observe(float64(latency.Milliseconds()))
-// 			return next.HandleDeserialize(ctx, input)
-// 		}), middleware.After)
-// 	})
-// 	return cfg, nil
-// }
 
 func InstrumentedAWSHTTPClient(httpClient *awshttp.BuildableClient, registry prometheus.Registerer) (aws.HTTPClient, error) {
 	if err := registerMetrics(registry); err != nil {
@@ -163,11 +133,6 @@ func (mrt MetricsRoundTripper) Do(req *http.Request) (*http.Response, error) {
 
 // RoundTrip implements an instrumented RoundTrip for AWS API calls
 func (mrt MetricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	log.Println(req.Proto)
-	dump, err := httputil.DumpRequestOut(req, true)
-	if err != nil {
-		log.Printf("unable to dump request: %v", err)
-	}
 	service, err := getService(req)
 	if err != nil {
 		log.Printf("Unable to parse request for service: %v", err)
@@ -185,9 +150,7 @@ func (mrt MetricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	}
 	requestLabels := requestLabels(service, action, statusCode)
 	totalRequests.With(requestLabels).Inc()
-	log.Printf("REQUEST: %v\n", string(dump))
 	requestLatency.With(requestLabels).Observe(float64(latency.Milliseconds()))
-
 	return res, err
 }
 
@@ -196,7 +159,6 @@ func getService(req *http.Request) (string, error) {
 	authzTokens := strings.Split(authz, "=")
 	credentialHeader := ""
 	for i, token := range authzTokens {
-		fmt.Println(token)
 		if strings.Contains(token, "Credential") && len(authzTokens) > i {
 			credentialHeader = authzTokens[i+1]
 		}
@@ -219,6 +181,8 @@ func getAction(req *http.Request) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		defer req.Body.Close()
+		req.Body = io.NopCloser(bytes.NewBuffer(body))
 		tokens := strings.Split(string(body), "=")
 		for i, token := range tokens {
 			if token == "Action" && len(tokens) > i {

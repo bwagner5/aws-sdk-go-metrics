@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/bwagner5/aws-sdk-go-metrics/pkg/awsmetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/samber/lo"
 )
 
 func main() {
@@ -42,7 +44,18 @@ func demo(sess *session.Session) {
 	ec2svc := ec2.New(sess)
 	ekssvc := eks.New(sess)
 
-	s3svc.ListBucketsWithContext(context.Background(), &s3.ListBucketsInput{})
-	ec2svc.DescribeInstances(&ec2.DescribeInstancesInput{})
-	ekssvc.DescribeAddonVersions(&eks.DescribeAddonVersionsInput{})
+	bucketNames := lo.Map(lo.Must(s3svc.ListBucketsWithContext(context.Background(), &s3.ListBucketsInput{})).Buckets, func(b *s3.Bucket, _ int) string {
+		return *b.Name
+	})
+	fmt.Printf("S3 Buckets: %v\n", bucketNames)
+
+	addonNames := lo.Map(lo.Must(ekssvc.DescribeAddonVersions(&eks.DescribeAddonVersionsInput{})).Addons, func(a *eks.AddonInfo, _ int) string {
+		return *a.AddonName
+	})
+	fmt.Printf("EKS Addons: %v\n", addonNames)
+
+	instanceIDs := lo.Flatten(lo.Map(lo.Must(ec2svc.DescribeInstances(&ec2.DescribeInstancesInput{})).Reservations, func(r *ec2.Reservation, _ int) []string {
+		return lo.Map(r.Instances, func(i *ec2.Instance, _ int) string { return *i.InstanceId })
+	}))
+	fmt.Printf("EC2 Instances: %v\n", instanceIDs)
 }
