@@ -2,18 +2,11 @@
 package awsmetrics
 
 import (
-	"bytes"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
-	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/bwagner5/aws-sdk-go-metrics/pkg/commons"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/http2"
 )
@@ -61,37 +54,9 @@ func Instrument(session *session.Session, registry prometheus.Registerer) (*sess
 	return session, nil
 }
 
-// WithInstrumentedClient returns a LoadOptionsFunc for use with aws-sdk-go-v2 config
-func WithInstrumentedClients(registry prometheus.Registerer) config.LoadOptionsFunc {
-	client, err := InstrumentAWSHTTPClient(awshttp.NewBuildableClient(), registry)
-	if err != nil {
-		return nil
-	}
-	return config.WithHTTPClient(client)
-}
-
-// InstrumentAWSHTTPClient turns an arbitrary AWS http client into an aws-sdk-go-v2 instrumented client
-func InstrumentAWSHTTPClient(httpClient *awshttp.BuildableClient, registry prometheus.Registerer) (aws.HTTPClient, error) {
-	if err := registerMetrics(registry); err != nil {
-		return httpClient, err
-	}
-
-	var transport *http.Transport
-	if httpClient.GetTransport() == nil {
-		transport = http.DefaultTransport.(*http.Transport)
-	} else {
-		transport = httpClient.GetTransport()
-	}
-	err := http2.ConfigureTransport(transport)
-	if err != nil {
-		panic(err)
-	}
-	return MetricsRoundTripper{BaseRT: httpClient.GetTransport()}, nil
-}
-
 // InstrumentHTTPClient turns an arbitrary http client into an aws sdk (v1) instrumented client
 func InstrumentHTTPClient(httpClient *http.Client, registry prometheus.Registerer) (*http.Client, error) {
-	if err := registerMetrics(registry); err != nil {
+	if err := commons.RegisterMetrics(registry); err != nil {
 		return httpClient, err
 	}
 
@@ -103,96 +68,6 @@ func InstrumentHTTPClient(httpClient *http.Client, registry prometheus.Registere
 	}
 	// no need to handle error since its idempotent
 	http2.ConfigureTransport(transport)
-	httpClient.Transport = MetricsRoundTripper{BaseRT: transport}
+	httpClient.Transport = commons.MetricsRoundTripper{BaseRT: transport}
 	return httpClient, nil
-}
-
-func registerMetrics(registry prometheus.Registerer) error {
-	for _, c := range []prometheus.Collector{totalRequests, requestLatency} {
-		if err := registry.Register(c); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func requestLabels(service string, action string, statusCode int) prometheus.Labels {
-	return prometheus.Labels{
-		"service":     service,
-		"action":      action,
-		"status_code": fmt.Sprint(statusCode),
-	}
-}
-
-type MetricsRoundTripper struct {
-	BaseRT http.RoundTripper
-}
-
-// Do implements the aws.HTTPClient interface
-func (mrt MetricsRoundTripper) Do(req *http.Request) (*http.Response, error) {
-	return mrt.RoundTrip(req)
-}
-
-// RoundTrip implements an instrumented RoundTrip for AWS API calls
-func (mrt MetricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	service, err := getService(req)
-	if err != nil {
-		log.Printf("Unable to parse request for service: %v", err)
-	}
-	action, err := getAction(req)
-	if err != nil {
-		log.Printf("Unable to parse request for action: %v", err)
-	}
-	start := time.Now().UTC()
-	res, err := mrt.BaseRT.RoundTrip(req)
-	latency := time.Since(start)
-	statusCode := 0
-	if res != nil {
-		statusCode = res.StatusCode
-	}
-	requestLabels := requestLabels(service, action, statusCode)
-	totalRequests.With(requestLabels).Inc()
-	requestLatency.With(requestLabels).Observe(float64(latency.Milliseconds()))
-	return res, err
-}
-
-func getService(req *http.Request) (string, error) {
-	authz := req.Header.Get("Authorization")
-	authzTokens := strings.Split(authz, "=")
-	credentialHeader := ""
-	for i, token := range authzTokens {
-		if strings.Contains(token, "Credential") && len(authzTokens) > i {
-			credentialHeader = authzTokens[i+1]
-		}
-	}
-	if credentialHeader == "" {
-		return "", fmt.Errorf("unable to find credential header: %v", authzTokens)
-	}
-	credentialHeaderTokens := strings.Split(credentialHeader, "/")
-	if len(credentialHeaderTokens) >= 5 {
-		return credentialHeaderTokens[3], nil
-	} else {
-		return "", fmt.Errorf("unable to find service in credential header, only found %d credential tokens", len(credentialHeaderTokens))
-	}
-}
-
-func getAction(req *http.Request) (string, error) {
-	switch req.Method {
-	case http.MethodPost, http.MethodPut:
-		body, err := io.ReadAll(req.Body)
-		if err != nil {
-			return "", err
-		}
-		defer req.Body.Close()
-		req.Body = io.NopCloser(bytes.NewBuffer(body))
-		tokens := strings.Split(string(body), "=")
-		for i, token := range tokens {
-			if token == "Action" && len(tokens) > i {
-				return strings.Split(tokens[i+1], "&")[0], nil
-			}
-		}
-		return "", fmt.Errorf("unable to find Action token in the request body")
-	default:
-		return req.URL.Path, nil
-	}
 }

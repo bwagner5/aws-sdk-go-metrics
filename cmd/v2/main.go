@@ -15,7 +15,7 @@ import (
 	ekstypes "github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/bwagner5/aws-sdk-go-metrics/pkg/awsmetrics"
+	"github.com/bwagner5/aws-sdk-go-metrics/pkg/awsmetricsv2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/samber/lo"
@@ -24,7 +24,7 @@ import (
 func main() {
 	registry := prometheus.NewRegistry()
 	// Load the Shared AWS Configuration (~/.aws/config)
-	cfg, err := config.LoadDefaultConfig(context.TODO(), awsmetrics.WithInstrumentedClients(registry))
+	cfg, err := config.LoadDefaultConfig(context.TODO(), awsmetricsv2.WithInstrumentedClients(registry))
 	if err != nil {
 		log.Fatal(err)
 	}
