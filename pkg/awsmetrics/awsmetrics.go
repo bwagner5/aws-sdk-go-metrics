@@ -1,3 +1,4 @@
+// Package awsmetrics enables instrumenting the aws-sdk-go and aws-sdk-go-v2 to emit prometheus metrics on AWS API calls
 package awsmetrics
 
 import (
@@ -37,8 +38,8 @@ var (
 	}, labels)
 )
 
-// MustInstrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
-// and panics if an error occurs
+// MustInstrument takes an aws-sdk-go (v1) session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
+// and panic if an error occurs
 func MustInstrument(session *session.Session, registry prometheus.Registerer) *session.Session {
 	sess, err := Instrument(session, registry)
 	if err != nil {
@@ -47,12 +48,12 @@ func MustInstrument(session *session.Session, registry prometheus.Registerer) *s
 	return sess
 }
 
-// Instrument takes an aws session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
+// Instrument takes an aws-sdk-go (v1) session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
 func Instrument(session *session.Session, registry prometheus.Registerer) (*session.Session, error) {
 	if session.Config == nil {
 		return session, fmt.Errorf("aws session must have valid config to instrument")
 	}
-	httpClient, err := InstrumentedHTTPClient(session.Config.HTTPClient, registry)
+	httpClient, err := InstrumentHTTPClient(session.Config.HTTPClient, registry)
 	if err != nil {
 		return session, fmt.Errorf("unable to construct instrumented http client, %v", err)
 	}
@@ -62,14 +63,15 @@ func Instrument(session *session.Session, registry prometheus.Registerer) (*sess
 
 // WithInstrumentedClient returns a LoadOptionsFunc for use with aws-sdk-go-v2 config
 func WithInstrumentedClients(registry prometheus.Registerer) config.LoadOptionsFunc {
-	client, err := InstrumentedAWSHTTPClient(awshttp.NewBuildableClient(), registry)
+	client, err := InstrumentAWSHTTPClient(awshttp.NewBuildableClient(), registry)
 	if err != nil {
 		return nil
 	}
 	return config.WithHTTPClient(client)
 }
 
-func InstrumentedAWSHTTPClient(httpClient *awshttp.BuildableClient, registry prometheus.Registerer) (aws.HTTPClient, error) {
+// InstrumentAWSHTTPClient turns an arbitrary AWS http client into an aws-sdk-go-v2 instrumented client
+func InstrumentAWSHTTPClient(httpClient *awshttp.BuildableClient, registry prometheus.Registerer) (aws.HTTPClient, error) {
 	if err := registerMetrics(registry); err != nil {
 		return httpClient, err
 	}
@@ -87,8 +89,8 @@ func InstrumentedAWSHTTPClient(httpClient *awshttp.BuildableClient, registry pro
 	return MetricsRoundTripper{BaseRT: httpClient.GetTransport()}, nil
 }
 
-// InstrumentedHTTPClient turns an arbitrary http client into an aws sdk instrumented client
-func InstrumentedHTTPClient(httpClient *http.Client, registry prometheus.Registerer) (*http.Client, error) {
+// InstrumentHTTPClient turns an arbitrary http client into an aws sdk (v1) instrumented client
+func InstrumentHTTPClient(httpClient *http.Client, registry prometheus.Registerer) (*http.Client, error) {
 	if err := registerMetrics(registry); err != nil {
 		return httpClient, err
 	}
