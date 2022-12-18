@@ -1,7 +1,7 @@
 toolchain: ## Install toolchain for development
 	hack/toolchain.sh
 
-verify: licenses ## Run Verifications like helm-lint and govulncheck
+verify: ## Run Verifications like helm-lint and govulncheck
 	govulncheck ./pkg/...
 	golangci-lint run
 
