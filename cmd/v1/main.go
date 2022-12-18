@@ -45,7 +45,7 @@ func main() {
 		promhttp.HandlerOpts{EnableOpenMetrics: false},
 	))
 	log.Printf("Serving prometheus metrics at http://127.0.0.1:%d/metrics", opts.Port)
-	http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", opts.Port), nil)
+	lo.Must0(http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", opts.Port), nil))
 }
 
 func demo(sess *session.Session) {

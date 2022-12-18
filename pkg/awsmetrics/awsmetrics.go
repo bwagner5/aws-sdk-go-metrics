@@ -1,4 +1,4 @@
-// Package awsmetrics enables instrumenting the aws-sdk-go and aws-sdk-go-v2 to emit prometheus metrics on AWS API calls
+// Package awsmetrics enables instrumenting the aws-sdk-go to emit prometheus metrics on AWS API calls
 package awsmetrics
 
 import (
@@ -9,26 +9,6 @@ import (
 	"github.com/bwagner5/aws-sdk-go-metrics/pkg/commons"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/http2"
-)
-
-var (
-	labels        = []string{"service", "action", "status_code"}
-	totalRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "aws_sdk_go_requests",
-		Help: "The total number of AWS SDK Go requests",
-	}, labels)
-
-	requestLatency = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "aws_sdk_go_request_latency",
-		Help: "Latency of AWS SDK Go requests",
-		Buckets: []float64{
-			10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
-			125, 150, 175, 200, 225, 250, 275, 300,
-			400, 500, 600, 700, 800, 900,
-			1_000, 1_500, 2_000, 2_500, 3_000, 3_500, 4_000, 4_500, 5_000,
-			6_000, 7_000, 8_000, 9_000, 10_000,
-		},
-	}, labels)
 )
 
 // MustInstrument takes an aws-sdk-go (v1) session and instruments the underlying HTTPClient to emit prometheus metrics on SDK calls
@@ -67,7 +47,7 @@ func InstrumentHTTPClient(httpClient *http.Client, registry prometheus.Registere
 		transport = httpClient.Transport.(*http.Transport)
 	}
 	// no need to handle error since its idempotent
-	http2.ConfigureTransport(transport)
+	_ = http2.ConfigureTransport(transport)
 	httpClient.Transport = commons.MetricsRoundTripper{BaseRT: transport}
 	return httpClient, nil
 }
