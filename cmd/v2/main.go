@@ -40,7 +40,7 @@ func main() {
 
 	go func() {
 		for {
-			log.Println("demoing")
+			log.Println("demoing api calls")
 			demo(cfg)
 			time.Sleep(time.Second * 30)
 		}

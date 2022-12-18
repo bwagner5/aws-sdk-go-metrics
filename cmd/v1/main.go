@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -36,7 +37,9 @@ func main() {
 
 	go func() {
 		for {
+			log.Println("demoing api calls")
 			demo(sess)
+			time.Sleep(30 * time.Second)
 		}
 	}()
 
