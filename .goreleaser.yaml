@@ -1,0 +1,52 @@
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - main: ./cmd/v1
+    id: "aws-sdk-go-metrics-v1-demo"
+    binary: "aws-sdk-go-metrics-v1-demo"
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -X main.commit={{.FullCommit}}
+      - -X main.version={{.Version}}
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - darwin_arm64
+      - darwin_amd64
+      - windows_amd64
+      - windows_arm64
+  - main: ./cmd/v2
+    id: "aws-sdk-go-metrics-v2-demo"
+    binary: "aws-sdk-go-metrics-v2-demo"
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -X main.commit={{.FullCommit}}
+      - -X main.version={{.Version}}
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - darwin_arm64
+      - darwin_amd64
+      - windows_amd64
+      - windows_arm64
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ incpatch .Version }}-snapshot"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+nfpms:
+  - maintainer: Brandon Wagner
+    description: |-
+      aws-sdk-go-metrics prometheus demo
+    license: Apache-2.0
+    formats:
+      - deb
+      - rpm

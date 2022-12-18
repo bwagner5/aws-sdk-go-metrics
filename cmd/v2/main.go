@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -21,7 +22,15 @@ import (
 	"github.com/samber/lo"
 )
 
+type Options struct {
+	Port int
+}
+
 func main() {
+	opts := Options{}
+	flag.IntVar(&opts.Port, "port", 2112, "port to serve prometheus metrics on")
+	flag.Parse()
+
 	registry := prometheus.NewRegistry()
 	// Load the Shared AWS Configuration (~/.aws/config)
 	cfg, err := config.LoadDefaultConfig(context.TODO(), awsmetricsv2.WithInstrumentedClients(registry))
@@ -40,7 +49,8 @@ func main() {
 		registry,
 		promhttp.HandlerOpts{EnableOpenMetrics: false},
 	))
-	http.ListenAndServe(":2112", nil)
+	log.Printf("Serving prometheus metrics at http://127.0.0.1:%d/metrics", opts.Port)
+	http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", opts.Port), nil)
 }
 
 func demo(cfg aws.Config) {

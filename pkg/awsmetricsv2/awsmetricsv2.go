@@ -1,3 +1,4 @@
+// Package awsmetricsv2 enables instrumenting the aws-sdk-go-v2 to emit prometheus metrics on AWS API calls
 package awsmetricsv2
 
 import (

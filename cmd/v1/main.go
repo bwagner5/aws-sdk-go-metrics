@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -17,7 +17,15 @@ import (
 	"github.com/samber/lo"
 )
 
+type Options struct {
+	Port int
+}
+
 func main() {
+	opts := Options{}
+	flag.IntVar(&opts.Port, "port", 2112, "port to serve prometheus metrics on")
+	flag.Parse()
+
 	registry := prometheus.NewRegistry()
 	sess, err := awsmetrics.Instrument(session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
@@ -29,14 +37,15 @@ func main() {
 	go func() {
 		for {
 			demo(sess)
-			time.Sleep(time.Second * 30)
 		}
 	}()
+
 	http.Handle("/metrics", promhttp.HandlerFor(
 		registry,
 		promhttp.HandlerOpts{EnableOpenMetrics: false},
 	))
-	http.ListenAndServe(":2112", nil)
+	log.Printf("Serving prometheus metrics at http://127.0.0.1:%d/metrics", opts.Port)
+	http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", opts.Port), nil)
 }
 
 func demo(sess *session.Session) {
